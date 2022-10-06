@@ -195,11 +195,11 @@ impl NodeRouter {
         nodes: Vec<Node>,
     ) -> Self {
         NodeRouter {
-            nodes: Arc::new(tokio::sync::Mutex::new(nodes.clone())),
-            alive_nodes: Arc::new(tokio::sync::Mutex::new(nodes.clone())),
+            nodes: Arc::new(tokio::sync::Mutex::new(nodes)),
+            alive_nodes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             dead_nodes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             alive_but_syncing_nodes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
-            primary_node: Arc::new(tokio::sync::Mutex::new(Some(nodes[0].clone()))),
+            primary_node: Arc::new(tokio::sync::Mutex::new(None)),
             jwt_key: Arc::new(jwt_key.clone()),
             majority_percentage: majority_percentage,
         }
@@ -636,13 +636,14 @@ async fn main() {
     )));
 
     // setup backround task to check if nodes are alive
-    /*let router_clone = router.clone();
+    let router_clone = router.clone();
+    tracing::debug!("Starting background recheck task");
     tokio::spawn(async move {
         loop {
             router_clone.lock().await.recheck().await;
             tokio::time::sleep(Duration::from_secs(30)).await;
         }
-    }); */
+    });
 
     // setup axum server
     let app = Router::new()
