@@ -398,30 +398,25 @@ impl NodeRouter {
             tracing::debug!("engine_getPayloadV1 sent to node: {}", node.url);
             match resp {
                 Ok(resp) => {
-                    tracing::trace!("engine_getPayloadV1 response: {}", resp.0);
                     return (resp.0, resp.1);
                 }
                 Err(e) => {
-                    tracing::trace!("engine_getPayloadV1 error: {}", e);
+                    tracing::warn!("engine_getPayloadV1 error: {}", e);
                     return (e.to_string(), 500);
                 }
             }
         } else if j["method"] == "engine_forkchoiceUpdatedV1" {
-            tracing::debug!(
-                "Sending forkchoiceUpdated to {} nodes",
-                self.alive_nodes.lock().await.len()
-            );
+            tracing::debug!("Sending forkchoiceUpdated to alive nodes",);
             let mut resps: Vec<String> = Vec::new();
             let alive_nodes = self.alive_nodes.lock().await;
             for node in alive_nodes.iter() {
                 let resp = node.do_request(data.to_string(), jwt_token.clone()).await;
                 match resp {
                     Ok(resp) => {
-                        tracing::trace!("engine_forkchoiceUpdatedV1 response: {}", resp.0);
                         resps.push(resp.0);
                     }
                     Err(e) => {
-                        tracing::trace!("engine_forkchoiceUpdatedV1 error: {}", e);
+                        tracing::warn!("engine_forkchoiceUpdatedV1 error: {}", e);
                         resps.push(e.to_string());
                     }
                 }
@@ -453,11 +448,10 @@ impl NodeRouter {
             });
             match resp {
                 Ok(resp) => {
-                    tracing::trace!("Response from primary node: {}", resp.0);
                     return (resp.0, resp.1);
                 }
                 Err(e) => {
-                    tracing::trace!("Error from primary node: {}", e);
+                    tracing::warn!("Error from primary node: {}", e);
                     return (e.to_string(), 500);
                 }
             }
@@ -500,7 +494,7 @@ async fn route_all(
         .unwrap()
         .to_string();
 
-    tracing::info!("Request received, method: {}", j["method"]);
+    tracing::debug!("Request received, method: {}", j["method"]);
     let mut router = router.lock().await;
     if j["method"].as_str().unwrap().starts_with("engine_") {
         tracing::trace!("Routing to engine route");
@@ -605,7 +599,7 @@ async fn main() {
     let subscriber = tracing_subscriber::fmt().with_max_level(log_level).finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
-    tracing::info!("fcu invalid threshold: {}", fcu_invalid_threshold);
+    tracing::info!("fcu invalid threshold set to: {}", fcu_invalid_threshold);
     let fcu_invalid_threshold = fcu_invalid_threshold
         .parse::<f32>()
         .expect("Invalid fcu threshold");
