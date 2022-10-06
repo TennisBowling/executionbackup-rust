@@ -11,9 +11,10 @@ use hex;
 use jsonwebtoken::{self, EncodingKey};
 use reqwest::{self, header};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use std::net::SocketAddr;
 use std::{collections::HashMap, sync::Arc};
+use tokio::time::Duration;
 use tracing;
 use tracing_subscriber;
 
@@ -64,7 +65,7 @@ impl Node {
         Node {
             client,
             url,
-            status: 0,
+            status: 1,
             resp_time: 0,
         }
     }
@@ -184,17 +185,21 @@ struct NodeRouter {
     jwt_key: Arc<jsonwebtoken::EncodingKey>,
 
     // percentage of nodes that need to agree for it to be deemed a majority
-    majority_percentage: u8, // 0.1..0.9
+    majority_percentage: f32, // 0.1..0.9
 }
 
 impl NodeRouter {
-    fn new(jwt_key: &jsonwebtoken::EncodingKey, majority_percentage: u8, nodes: Vec<Node>) -> Self {
+    fn new(
+        jwt_key: &jsonwebtoken::EncodingKey,
+        majority_percentage: f32,
+        nodes: Vec<Node>,
+    ) -> Self {
         NodeRouter {
-            nodes: Arc::new(tokio::sync::Mutex::new(nodes)),
-            alive_nodes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            nodes: Arc::new(tokio::sync::Mutex::new(nodes.clone())),
+            alive_nodes: Arc::new(tokio::sync::Mutex::new(nodes.clone())),
             dead_nodes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             alive_but_syncing_nodes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
-            primary_node: Arc::new(tokio::sync::Mutex::new(None)),
+            primary_node: Arc::new(tokio::sync::Mutex::new(Some(nodes[0].clone()))),
             jwt_key: Arc::new(jwt_key.clone()),
             majority_percentage: majority_percentage,
         }
@@ -339,13 +344,14 @@ impl NodeRouter {
 
     async fn fcu_logic(&self, resps: &Vec<String>, jwt_token: String, id: u64) -> String {
         let majority = self.fcu_majority(resps);
-        let majorityjson = json!(majority);
 
         if majority.is_none() {
             // no majority, so return SYNCING
-            return format!("{{\"jsonrpc\":\"2.0\",\"id\":{},\"result\":{{\"payloadStatus\":{{\"status\":\"SYNCING\",\"latestValidHash\":null,\"validationError\":null}},\"payloadId\":null}}", id);
+            return json!({"jsonrpc":"2.0","id":id,"result":{"payloadStatus":{"status":"SYNCING","latestValidHash":null,"validationError":null}},"payloadId":null}).to_string();
         }
+
         let majority = majority.unwrap();
+        let majorityjson: serde_json::Value = serde_json::from_str(&majority).unwrap();
 
         if majorityjson["result"]["payloadStatus"]["status"] == "INVALID" {
             // majority is INVALID, so return INVALID (to not go through the next parts of the algorithm)
@@ -353,9 +359,10 @@ impl NodeRouter {
         }
 
         for resp in resps {
-            if json!(resp)["result"]["payloadStatus"]["status"] == "INVALID" {
+            let respjson: serde_json::Value = serde_json::from_str(resp).unwrap();
+            if respjson["result"]["payloadStatus"]["status"] == "INVALID" {
                 // at least one node is VALID, so return SYNCING
-                return format!("{{\"jsonrpc\":\"2.0\",\"id\":{},\"result\":{{\"payloadStatus\":{{\"status\":\"SYNCING\",\"latestValidHash\":null,\"validationError\":null}},\"payloadId\":null}}", id);
+                return json!({"jsonrpc":"2.0","id":id,"result":{"payloadStatus":{"status":"SYNCING","latestValidHash":null,"validationError":null}},"payloadId":null}).to_string();
             }
         }
 
@@ -485,7 +492,7 @@ async fn route_all(
     headers: HeaderMap,
     Extension(router): Extension<Arc<tokio::sync::Mutex<NodeRouter>>>,
 ) -> impl IntoResponse {
-    let j = json!(body);
+    let j: serde_json::Value = serde_json::from_str(&body).unwrap();
     let jwt_token = headers
         .get("Authorization")
         .unwrap()
@@ -493,9 +500,9 @@ async fn route_all(
         .unwrap()
         .to_string();
 
-    tracing::trace!("Request received");
+    tracing::info!("Request received, method: {}", j["method"]);
     let mut router = router.lock().await;
-    if j["method"].to_string().starts_with("engine_") {
+    if j["method"].as_str().unwrap().starts_with("engine_") {
         tracing::trace!("Routing to engine route");
         let (resp, status) = router.do_engine_route(&body, &j, jwt_token).await;
         return (
@@ -598,18 +605,29 @@ async fn main() {
     let subscriber = tracing_subscriber::fmt().with_max_level(log_level).finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
-    let fcu_invalid_threshold = fcu_invalid_threshold.parse::<u8>().unwrap();
-    let nodes = nodes.split(",").collect::<Vec<&str>>();
-    let jwt_secret = &EncodingKey::from_secret(
-        &hex::decode(std::fs::read_to_string(jwt_secret).unwrap().trim())
-            .expect("could not decode jwt secret"),
-    );
+    tracing::info!("fcu invalid threshold: {}", fcu_invalid_threshold);
+    let fcu_invalid_threshold = fcu_invalid_threshold
+        .parse::<f32>()
+        .expect("Invalid fcu threshold");
 
+    let nodes = nodes.split(",").collect::<Vec<&str>>();
     let mut nodesinstances: Vec<Node> = Vec::new();
     for node in nodes {
         let node = Node::new(node.to_string());
         nodesinstances.push(node);
     }
+
+    let jwt_secret = std::fs::read_to_string(jwt_secret).expect("Unable to read JWT secret file");
+    let jwt_secret = jwt_secret.trim().to_string();
+
+    // check if jwt_secret starts with "0x" and remove it if it does
+    let jwt_secret = if jwt_secret.starts_with("0x") {
+        jwt_secret[2..].to_string()
+    } else {
+        jwt_secret
+    };
+    let jwt_secret =
+        &EncodingKey::from_secret(&hex::decode(jwt_secret).expect("Could not decode jwt secret"));
 
     let mut router = Arc::new(tokio::sync::Mutex::new(NodeRouter::new(
         jwt_secret,
@@ -617,14 +635,24 @@ async fn main() {
         nodesinstances,
     )));
 
+    // setup backround task to check if nodes are alive
+    /*let router_clone = router.clone();
+    tokio::spawn(async move {
+        loop {
+            router_clone.lock().await.recheck().await;
+            tokio::time::sleep(Duration::from_secs(30)).await;
+        }
+    }); */
+
     // setup axum server
     let app = Router::new()
         .route("/", axum::routing::post(route_all))
         .layer(Extension(router.clone()));
 
     let addr = format!("{}:{}", listen_addr, port);
+    let addr: SocketAddr = addr.parse().unwrap();
     tracing::info!("Listening on {}", addr);
-    axum::Server::bind(&addr.parse().unwrap())
+    axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
         .unwrap();

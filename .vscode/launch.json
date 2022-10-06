@@ -4,13 +4,27 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Rust Debug",
-            "program": "${workspaceRoot}/target/debug/${workspaceRootFolderName}",
-            "args": [],
-            "cwd": "${workspaceRoot}/target/debug/",
-            "sourceLanguages": [
-                "rust"
+            "name": "Cargo launch",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=executionbackup-rust"
+                ]
+            },
+            "args": [
+                "--nodes",
+                "http://localhost:8001,http://localhost:8002,http://localhost:8003",
+                "--port",
+                "8545",
+                "--jwt-secret",
+                "C:\\Users\\FASTS\\OneDrive\\Documents\\github\\executionbackup\\jwt.txt"
             ]
+        },
+        {
+            "type": "lldb",
+            "request": "attach",
+            "name": "Attach",
+            "pid": "${command:pickMyProcess}" // use ${command:pickProcess} to pick other users' processes
         }
     ]
 }
