@@ -4,23 +4,18 @@ use axum::{
     response::IntoResponse,
     Extension, Router,
 };
-use chrono;
-use clap;
 use futures::{self};
-use hex;
 use jsonwebtoken::{self, EncodingKey};
 use reqwest::{self, header};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::json;
 use std::net::SocketAddr;
 use std::{collections::HashMap, sync::Arc};
 use tokio::time::Duration;
-use tracing;
-use tracing_subscriber;
 
 const DEFAULT_ALGORITHM: jsonwebtoken::Algorithm = jsonwebtoken::Algorithm::HS256;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Claims {
     /// issued-at claim. Represented as seconds passed since UNIX_EPOCH.
     iat: i64,
@@ -127,7 +122,7 @@ impl Node {
         let result = &json_body["result"];
 
         if result.is_boolean() {
-            if result.as_bool().unwrap() == false {
+            if !result.as_bool().unwrap() {
                 self.set_online();
             } else {
                 self.set_syncing();
@@ -140,7 +135,7 @@ impl Node {
 
         Ok(CheckAliveResult {
             status: self.status,
-            resp_time: resp_time,
+            resp_time,
         })
     }
 
@@ -201,7 +196,7 @@ impl NodeRouter {
             alive_but_syncing_nodes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             primary_node: Arc::new(tokio::sync::Mutex::new(None)),
             jwt_key: Arc::new(jwt_key.clone()),
-            majority_percentage: majority_percentage,
+            majority_percentage,
         }
     }
     async fn recheck(&mut self) {
@@ -336,7 +331,7 @@ impl NodeRouter {
         let majority_count =
             (self.majority_percentage as f32 / 100.0 * resultscount as f32).ceil() as u16;
         if maxcount >= majority_count {
-            Some(maxresp.to_string())
+            Some(maxresp)
         } else {
             None
         }
@@ -397,12 +392,10 @@ impl NodeRouter {
             let resp = node.do_request(data.to_string(), jwt_token).await;
             tracing::debug!("engine_getPayloadV1 sent to node: {}", node.url);
             match resp {
-                Ok(resp) => {
-                    return (resp.0, resp.1);
-                }
+                Ok(resp) => (resp.0, resp.1),
                 Err(e) => {
                     tracing::warn!("engine_getPayloadV1 error: {}", e);
-                    return (e.to_string(), 500);
+                    (e.to_string(), 500)
                 }
             }
         } else if j["method"] == "engine_forkchoiceUpdatedV1" {
@@ -423,7 +416,7 @@ impl NodeRouter {
             }
             let id = j["id"].as_u64().unwrap();
             let resp = self.fcu_logic(&resps, jwt_token, id).await;
-            return (resp, 200);
+            (resp, 200)
         } else {
             // wait for primary node's response, but also send to all other nodes
             let primary_node = self.get_execution_node().await;
@@ -447,12 +440,10 @@ impl NodeRouter {
                 }
             });
             match resp {
-                Ok(resp) => {
-                    return (resp.0, resp.1);
-                }
+                Ok(resp) => (resp.0, resp.1),
                 Err(e) => {
                     tracing::warn!("Error from primary node: {}", e);
-                    return (e.to_string(), 500);
+                    (e.to_string(), 500)
                 }
             }
         }
@@ -470,11 +461,11 @@ impl NodeRouter {
         match resp {
             Ok(resp) => {
                 tracing::trace!("Response from primary node: {}", resp.0);
-                return (resp.0, resp.1);
+                (resp.0, resp.1)
             }
             Err(e) => {
                 tracing::trace!("Error from primary node: {}", e);
-                return (e.to_string(), 500);
+                (e.to_string(), 500)
             }
         }
     }
@@ -507,11 +498,11 @@ async fn route_all(
     }
     tracing::trace!("Routing to normal route");
     let (resp, status) = router.do_route_normal(&body, jwt_token).await;
-    return (
+    (
         StatusCode::from_u16(status).unwrap(),
         [(header::CONTENT_TYPE, "application/json")],
         resp,
-    );
+    )
 }
 
 #[tokio::main]
@@ -604,7 +595,7 @@ async fn main() {
         .parse::<f32>()
         .expect("Invalid fcu threshold");
 
-    let nodes = nodes.split(",").collect::<Vec<&str>>();
+    let nodes = nodes.split(',').collect::<Vec<&str>>();
     let mut nodesinstances: Vec<Node> = Vec::new();
     for node in nodes {
         let node = Node::new(node.to_string());
@@ -615,15 +606,11 @@ async fn main() {
     let jwt_secret = jwt_secret.trim().to_string();
 
     // check if jwt_secret starts with "0x" and remove it if it does
-    let jwt_secret = if jwt_secret.starts_with("0x") {
-        jwt_secret[2..].to_string()
-    } else {
-        jwt_secret
-    };
+    let jwt_secret = jwt_secret.strip_prefix("0x").unwrap().to_string();
     let jwt_secret =
         &EncodingKey::from_secret(&hex::decode(jwt_secret).expect("Could not decode jwt secret"));
 
-    let mut router = Arc::new(tokio::sync::Mutex::new(NodeRouter::new(
+    let router = Arc::new(tokio::sync::Mutex::new(NodeRouter::new(
         jwt_secret,
         fcu_invalid_threshold,
         nodesinstances,
