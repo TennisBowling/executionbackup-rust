@@ -79,11 +79,11 @@ jobs:
 
             - name: Build Lighthouse for x86_64-apple-darwin
               if:   matrix.arch == 'x86_64-apple-darwin'
-              run:  cargo install --path executionbackup-rust --force --locked --profile highperf
+              run:  cargo install --path . --force --locked --profile highperf
 
             - name: Build Lighthouse for Windows
               if:   matrix.arch == 'x86_64-windows'
-              run:  cargo install --path executionbackup-rust --force --locked --profile highperf
+              run:  cargo install --path . --force --locked --profile highperf
         
             - name: Zip binary
               if:   startsWith(matrix.arch, 'x86_64-windows') != true
