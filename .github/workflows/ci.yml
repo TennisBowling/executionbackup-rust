@@ -86,7 +86,7 @@ jobs:
               run:  cargo install --path executionbackup-rust --force --locked --profile highperf
         
             - name: Zip binary
-              if:  if: startsWith(matrix.arch, 'x86_64-windows') != true
+              if:   startsWith(matrix.arch, 'x86_64-windows') != true
               run: |
                     mkdir artifacts
                     mv ~/.cargo/bin/executionbackup-rust ./artifacts
@@ -95,7 +95,7 @@ jobs:
                     mv *.tar.gz ..
             
             - name: Zip binary Windows
-              if:  if: startsWith(matrix.arch, 'x86_64-windows')
+              if:   startsWith(matrix.arch, 'x86_64-windows')
               run: |
                     mkdir artifacts
                     move $env:USERPROFILE/.cargo/bin/executionbackup-rust.exe ./artifacts
@@ -122,24 +122,24 @@ jobs:
 
     steps:
       - name: Create Release
-      id: create_release
-      uses: actions/create-release@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.ref }}
-        body: ${{ steps.read_changelog.outputs.changelog }}
-        draft: false
-        prerelease: false
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          body: ${{ steps.read_changelog.outputs.changelog }}
+          draft: false
+          prerelease: false
 
-    - name: Store Release url
-      run: |
-        echo "${{ steps.create_release.outputs.upload_url }}" > ./upload_url
-    - uses: actions/upload-artifact@v2
-      with:
-        path: ./upload_url
-        name: upload_url
+      - name: Store Release url
+        run: |
+          echo "${{ steps.create_release.outputs.upload_url }}" > ./upload_url
+      - uses: actions/upload-artifact@v2
+        with:
+          path: ./upload_url
+          name: upload_url
 
   publish:
     if: contains(github.ref, 'tags/v')
@@ -154,24 +154,25 @@ jobs:
           - { name: "MacOS", os: "macos-latest" }
     needs: release
 
-    - name: Download URL
-      uses: actions/download-artifact@v2
-      with:
-        name: upload_url
-        path: ./
-    - id: set_upload_url
-      run: |
-        upload_url=`cat ./upload_url`
-        echo ::set-output name=upload_url::$upload_url
-        ls
+    steps:
+      - name: Download URL
+        uses: actions/download-artifact@v2
+        with:
+          name: upload_url
+          path: ./
+      - id: set_upload_url
+        run: |
+          upload_url=`cat ./upload_url`
+          echo ::set-output name=upload_url::$upload_url
+          ls
 
-    - name: Upload to Release
-      id: upload_to_release
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        upload_url: ${{ steps.set_upload_url.outputs.upload_url }}
-        asset_path: ./artifacts/executionbackup-rust-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.config.name }}.tar.gz
-        asset_name: executionbackup-rust-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.config.name }}.tar.gz
-        asset_content_type: application/gzip
+      - name: Upload to Release
+        id: upload_to_release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.set_upload_url.outputs.upload_url }}
+          asset_path: ./artifacts/executionbackup-rust-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.config.name }}.tar.gz
+          asset_name: executionbackup-rust-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.config.name }}.tar.gz
+          asset_content_type: application/gzip
