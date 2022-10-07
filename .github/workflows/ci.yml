@@ -55,7 +55,7 @@ jobs:
               run: echo "LIBCLANG_PATH=$((gcm clang).source -replace "clang.exe")" >> $env:GITHUB_ENV
               
             - name: install musl-gcc
-              if: startsWith(matrix.arch, 'x86_64-windows') != true
+              if: startsWith(matrix.arch, 'aarch64')
               run: sudo apt-get install musl-tools -y
   
             # ==============================
