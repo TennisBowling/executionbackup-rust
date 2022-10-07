@@ -67,7 +67,7 @@ jobs:
 
             - name: Move cross-compiled binary
               if:  startsWith(matrix.arch, 'x86_64-unknown-linux-gnu')
-              run: mv target/x86_64-unknown-linux-gnu/release/executionbackup-ru ~/.cargo/bin/lighthouse
+              run: mv target/x86_64-unknown-linux-gnu/release/executionbackup-rust ~/.cargo/bin/lighthouse
 
             - name: Build Lighthouse for x86_64-apple-darwin
               if:   matrix.arch == 'x86_64-apple-darwin'
