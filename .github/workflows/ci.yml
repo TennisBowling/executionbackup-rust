@@ -60,14 +60,7 @@ jobs:
 
             - name: Build Lighthouse for x86_64-unknown-linux-gnu
               if:   matrix.arch == 'x86_64-unknown-linux-gnu'
-              run:  |
-                cargo install cross
-                rustup target add x86_64-unknown-linux-gnu
-                make build-x86_64
-
-            - name: Move cross-compiled binary
-              if:  startsWith(matrix.arch, 'x86_64-unknown-linux-gnu')
-              run: mv target/x86_64-unknown-linux-gnu/release/executionbackup-rust ~/.cargo/bin/lighthouse
+              run:  cargo install --path . --force --locked --profile highperf
 
             - name: Build Lighthouse for x86_64-apple-darwin
               if:   matrix.arch == 'x86_64-apple-darwin'
