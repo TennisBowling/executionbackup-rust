@@ -28,6 +28,7 @@ jobs:
                         platform: windows-2019
       
         runs-on: ${{ matrix.platform }}
+        needs: extract-version
         steps:
             - name: Checkout sources
               uses: actions/checkout@v2
@@ -123,14 +124,13 @@ jobs:
   publish:
     if: contains(github.ref, 'tags/v')
     name: ${{ matrix.config.name }}
-    runs-on: ${{ matrix.config.os }}
     strategy:
-      fail-fast: false
-      matrix:
-        config:
-          - { name: "Linux", os: "ubuntu-latest" }
-          - { name: "Windows", os: "windows-latest" }
-          - { name: "MacOS", os: "macos-latest" }
+        matrix:
+            arch: [x86_64-unknown-linux-gnu,
+                   x86_64-apple-darwin,
+                   x86_64-windows]
+    runs-on: ubuntu-latest
+    needs: extract-version
     needs: release
 
     steps:
@@ -152,6 +152,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ steps.set_upload_url.outputs.upload_url }}
-          asset_path: ./artifacts/executionbackup-rust-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.config.name }}.tar.gz
-          asset_name: executionbackup-rust-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.config.name }}.tar.gz
+          asset_path: ./artifacts/executionbackup-rust-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.arch }}.tar.gz
+          asset_name: executionbackup-rust-${{ needs.extract-version.outputs.VERSION }}-${{ matrix.arch }}.tar.gz
           asset_content_type: application/gzip
