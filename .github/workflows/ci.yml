@@ -130,8 +130,7 @@ jobs:
                    x86_64-apple-darwin,
                    x86_64-windows]
     runs-on: ubuntu-latest
-    needs: extract-version
-    needs: release
+    needs: [extract-version, release]
 
     steps:
       - name: Download URL
