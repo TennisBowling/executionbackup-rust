@@ -337,7 +337,13 @@ impl NodeRouter {
         }
     }
 
-    async fn fcu_logic(&self, resps: &Vec<String>, jwt_token: String, id: u64) -> String {
+    async fn fcu_logic(
+        &self,
+        resps: &Vec<String>,
+        req: String,
+        jwt_token: String,
+        id: u64,
+    ) -> String {
         let majority = self.fcu_majority(resps);
 
         if majority.is_none() {
@@ -364,15 +370,15 @@ impl NodeRouter {
         // if we get here, all responses are VALID or SYNCING, so return the majority
         // send to the syncing nodes to help them catch up with tokio::spawn
         let syncing_nodes = self.alive_but_syncing_nodes.clone();
-        let maj2 = majority.clone();
         tokio::spawn(async move {
             let syncing_nodes = syncing_nodes.lock().await;
+            tracing::debug!("sending fcU to {} syncing nodes", syncing_nodes.len());
             for node in syncing_nodes.iter() {
-                node.do_request(majority.clone(), jwt_token.clone()).await;
+                node.do_request(req.clone(), jwt_token.clone()).await;
             }
         });
 
-        maj2
+        majority
     }
 
     async fn do_engine_route(
@@ -415,7 +421,9 @@ impl NodeRouter {
                 }
             }
             let id = j["id"].as_u64().unwrap();
-            let resp = self.fcu_logic(&resps, jwt_token, id).await;
+            let resp = self
+                .fcu_logic(&resps, data.to_string(), jwt_token, id)
+                .await;
             (resp, 200)
         } else {
             // wait for primary node's response, but also send to all other nodes

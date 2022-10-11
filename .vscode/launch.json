@@ -13,11 +13,11 @@
             },
             "args": [
                 "--nodes",
-                "http://localhost:8001,http://localhost:8002,http://localhost:8003",
+                "http://192.168.86.109:8551,http://192.168.86.36:8551",
                 "--port",
-                "8545",
+                "7000",
                 "--jwt-secret",
-                "C:\\Users\\FASTS\\OneDrive\\Documents\\github\\executionbackup\\jwt.txt"
+                "C:\\Users\\FASTS\\OneDrive\\Documents\\github\\executionbackup-rust\\jwt.txt"
             ]
         },
         {
