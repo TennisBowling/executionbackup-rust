@@ -516,12 +516,12 @@ async fn route_all(
 #[tokio::main]
 async fn main() {
     let matches = clap::App::new("executionbackup")
-        .version("0.0.1")
+        .version("1.0.0")
         .author("TennisBowling <tennisbowling@tennisbowling.com>")
         .setting(clap::AppSettings::ColoredHelp)
         .about("A Ethereum 2.0 multiplexer enabling execution node failover post-merge")
         .long_version(
-            "executionbackup version 0.0.1 by TennisBowling <tennisbowling@tennisbowling.com>",
+            "executionbackup version 1.0.0 by TennisBowling <tennisbowling@tennisbowling.com>",
         )
         .arg(
             clap::Arg::with_name("port")
