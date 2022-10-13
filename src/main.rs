@@ -60,7 +60,7 @@ impl Node {
         Node {
             client,
             url,
-            status: 1,
+            status: 4,
             resp_time: 0,
         }
     }
@@ -614,7 +614,10 @@ async fn main() {
     let jwt_secret = jwt_secret.trim().to_string();
 
     // check if jwt_secret starts with "0x" and remove it if it does
-    let jwt_secret = jwt_secret.strip_prefix("0x").unwrap().to_string();
+    let jwt_secret = jwt_secret
+        .strip_prefix("0x")
+        .unwrap_or(&jwt_secret)
+        .to_string();
     let jwt_secret =
         &EncodingKey::from_secret(&hex::decode(jwt_secret).expect("Could not decode jwt secret"));
 
