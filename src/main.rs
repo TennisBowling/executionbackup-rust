@@ -4,7 +4,7 @@ use axum::{
     response::IntoResponse,
     Extension, Router,
 };
-use futures::{self};
+use futures::{self, Future};
 use jsonwebtoken::{self, EncodingKey};
 use reqwest::{self, header};
 use serde::{Deserialize, Serialize};
@@ -457,6 +457,31 @@ impl NodeRouter {
         }
     }
 
+    async fn do_builder_route(&mut self, data: &str, jwt_token: String) -> (String, u16) {
+        // we need to foward the request to all nodes, and return the first response that **is not a method not found error**, because not all nodes support the builder API
+        let mut methnotfound: String = String::new();
+        let alive_nodes = self.alive_nodes.lock().await;
+        for node in alive_nodes.iter() {
+            let resp = node.do_request(data.to_string(), jwt_token.clone()).await;
+
+            match resp {
+                Ok(resp) => {
+                    if resp.1 == 200 {
+                        return resp;
+                    } else {
+                        methnotfound = resp.0;
+                    }
+                }
+                Err(_) => {}
+            }
+        }
+
+        if methnotfound.chars().count() == 0 {
+            return (String::from("No nodes available"), 500);
+        }
+        (methnotfound, 500) // responses in resps are all method not found errors, so return the first one
+    }
+
     async fn do_route_normal(&mut self, data: &str, jwt_token: String) -> (String, u16) {
         // simply send request to primary node
         let primary_node = self.get_execution_node().await;
@@ -472,7 +497,7 @@ impl NodeRouter {
                 (resp.0, resp.1)
             }
             Err(e) => {
-                tracing::trace!("Error from primary node: {}", e);
+                tracing::warn!("Error from primary node: {}", e);
                 (e.to_string(), 500)
             }
         }
@@ -495,7 +520,8 @@ async fn route_all(
 
     tracing::debug!("Request received, method: {}", j["method"]);
     let mut router = router.lock().await;
-    if j["method"].as_str().unwrap().starts_with("engine_") {
+    let meth = j["method"].as_str().unwrap();
+    if meth.starts_with("engine_") {
         tracing::trace!("Routing to engine route");
         let (resp, status) = router.do_engine_route(&body, &j, jwt_token).await;
         return (
@@ -503,14 +529,23 @@ async fn route_all(
             [(header::CONTENT_TYPE, "application/json")],
             resp,
         );
+    } else if meth.starts_with("builder_") {
+        tracing::trace!("Routing to builder route");
+        let (resp, status) = router.do_builder_route(&body, jwt_token).await;
+        return (
+            StatusCode::from_u16(status).unwrap(),
+            [(header::CONTENT_TYPE, "application/json")],
+            resp,
+        );
+    } else {
+        tracing::trace!("Routing to normal route");
+        let (resp, status) = router.do_route_normal(&body, jwt_token).await;
+        return (
+            StatusCode::from_u16(status).unwrap(),
+            [(header::CONTENT_TYPE, "application/json")],
+            resp,
+        );
     }
-    tracing::trace!("Routing to normal route");
-    let (resp, status) = router.do_route_normal(&body, jwt_token).await;
-    (
-        StatusCode::from_u16(status).unwrap(),
-        [(header::CONTENT_TYPE, "application/json")],
-        resp,
-    )
 }
 
 #[tokio::main]
