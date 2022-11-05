@@ -374,7 +374,13 @@ impl NodeRouter {
             let syncing_nodes = syncing_nodes.lock().await;
             tracing::debug!("sending fcU to {} syncing nodes", syncing_nodes.len());
             for node in syncing_nodes.iter() {
-                node.do_request(req.clone(), jwt_token.clone()).await;
+                match (node.do_request(req.clone(), jwt_token.clone()).await)
+                {
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::error!("error sending fcU to syncing node: {}", e);
+                    }
+                };
             }
         });
 
@@ -404,7 +410,7 @@ impl NodeRouter {
                     (e.to_string(), 500)
                 }
             }
-        } else if j["method"] == "engine_forkchoiceUpdatedV1" {
+        } else if j["method"] == "engine_forkchoiceUpdatedV1" || j["method"] == "engine_newPayloadV1" {
             tracing::debug!("Sending forkchoiceUpdated to alive nodes",);
             let mut resps: Vec<String> = Vec::new();
             let alive_nodes = self.alive_nodes.lock().await;
