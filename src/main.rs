@@ -150,6 +150,7 @@ impl Node {
             .header("Content-Type", "application/json")
             .header("Authorization", jwt_token)
             .body(data)
+            .timeout(Duration::from_secs(1))
             .send()
             .await;
 
