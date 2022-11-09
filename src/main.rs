@@ -361,6 +361,10 @@ impl NodeRouter {
         }
 
         for resp in resps {
+            if resp.is_empty()
+            {
+                continue;
+            }
             let respjson: serde_json::Value = serde_json::from_str(resp).unwrap();
             if respjson["result"]["payloadStatus"]["status"] == "INVALID" {
                 // at least one node is VALID, so return SYNCING
@@ -375,7 +379,7 @@ impl NodeRouter {
             let syncing_nodes = syncing_nodes.lock().await;
             tracing::debug!("sending fcU to {} syncing nodes", syncing_nodes.len());
             for node in syncing_nodes.iter() {
-                match (node.do_request(req.clone(), jwt_token.clone()).await)
+                match node.do_request(req.clone(), jwt_token.clone()).await
                 {
                     Ok(_) => {}
                     Err(e) => {
