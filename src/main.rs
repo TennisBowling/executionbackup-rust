@@ -4,14 +4,14 @@ use axum::{
     response::IntoResponse,
     Extension, Router,
 };
-use futures::{self, Future};
+use futures::{self};
 use jsonwebtoken::{self, EncodingKey};
 use reqwest::{self, header};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::net::SocketAddr;
 use std::{collections::HashMap, sync::Arc};
-use tokio::time::Duration;
+use tokio::{time::Duration, sync::RwLock};
 
 const DEFAULT_ALGORITHM: jsonwebtoken::Algorithm = jsonwebtoken::Algorithm::HS256;
 
@@ -169,13 +169,13 @@ impl Node {
 }
 
 struct NodeRouter {
-    nodes: Arc<tokio::sync::Mutex<Vec<Node>>>,
-    alive_nodes: Arc<tokio::sync::Mutex<Vec<Node>>>,
-    dead_nodes: Arc<tokio::sync::Mutex<Vec<Node>>>,
-    alive_but_syncing_nodes: Arc<tokio::sync::Mutex<Vec<Node>>>,
+    nodes: Arc<RwLock<Arc<Vec<Node>>>>,
+    alive_nodes: Arc<RwLock<Arc<Vec<Node>>>>,
+    dead_nodes: Arc<RwLock<Arc<Vec<Node>>>>,
+    alive_but_syncing_nodes: Arc<RwLock<Arc<Vec<Node>>>>,
 
     // this node will be the selected primary node used to route all requests
-    primary_node: Arc<tokio::sync::Mutex<Option<Node>>>,
+    primary_node: Arc<RwLock<Option<Arc<Node>>>>,
 
     // jwt encoded key used to make tokens for the EE's auth port
     jwt_key: Arc<jsonwebtoken::EncodingKey>,
@@ -191,17 +191,17 @@ impl NodeRouter {
         nodes: Vec<Node>,
     ) -> Self {
         NodeRouter {
-            nodes: Arc::new(tokio::sync::Mutex::new(nodes)),
-            alive_nodes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
-            dead_nodes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
-            alive_but_syncing_nodes: Arc::new(tokio::sync::Mutex::new(Vec::new())),
-            primary_node: Arc::new(tokio::sync::Mutex::new(None)),
+            nodes: Arc::new(RwLock::new(Arc::new(nodes))),
+            alive_nodes: Arc::new(RwLock::new(Arc::new(Vec::new()))),
+            dead_nodes: Arc::new(RwLock::new(Arc::new(Vec::new()))),
+            alive_but_syncing_nodes: Arc::new(RwLock::new(Arc::new(Vec::new()))),
+            primary_node: Arc::new(RwLock::new(None)),
             jwt_key: Arc::new(jwt_key.clone()),
             majority_percentage,
         }
     }
-    async fn recheck(&mut self) {
-        let mut nodes = self.nodes.lock().await;
+    async fn recheck(&self) {
+        let mut nodes = self.nodes.write().await.as_ref().clone();
 
         // call tokio::spawn on each node to check its status
         let mut results = Vec::new();
@@ -214,9 +214,12 @@ impl NodeRouter {
         let results = futures::future::join_all(results).await;
 
         // now we need to update the alive_nodes, dead_nodes, and alive_but_syncing_nodes vectors
-        let mut alive_nodes = self.alive_nodes.lock().await;
-        let mut dead_nodes = self.dead_nodes.lock().await;
-        let mut alive_but_syncing_nodes = self.alive_but_syncing_nodes.lock().await;
+        // get a read lock on those vectors
+        // and then get drop read locks, get write locks, and update the vectors
+        let mut alive_nodes = self.alive_nodes.read().await.as_ref().clone();
+        let mut dead_nodes = self.alive_nodes.read().await.as_ref().clone(); 
+        let mut alive_but_syncing_nodes = self.alive_nodes.read().await.as_ref().clone(); 
+
 
         // clear the vectors
         alive_nodes.clear();
@@ -252,8 +255,9 @@ impl NodeRouter {
         }
 
         // reset the primary node
-        let mut primary_node = self.primary_node.lock().await;
+        let mut primary_node = self.primary_node.write().await;
         *primary_node = None;
+
 
         tracing::debug!(
             "Alive nodes: {}, Dead nodes: {}, Syncing nodes: {}",
@@ -261,14 +265,19 @@ impl NodeRouter {
             dead_nodes.len(),
             alive_but_syncing_nodes.len()
         );
+
+        // update the vectors
+        *self.alive_nodes.write().await = Arc::new(alive_nodes);
+        *self.dead_nodes.write().await = Arc::new(dead_nodes);
+        *self.alive_but_syncing_nodes.write().await = Arc::new(alive_but_syncing_nodes);
     }
 
     // always get the same node from the alive_nodes vector
     // if the primary node is offline, then we'll get the next node in the vector, and set the primary node to that node
     // if no alive nodes, call recheck and try again
-    async fn get_execution_node(&mut self) -> Option<Node> {
-        let mut primary_node = self.primary_node.lock().await;
-        let alive_nodes = self.alive_nodes.lock().await;
+    async fn get_execution_node(&self) -> Option<Arc<Node>> {
+        let primary_node = self.primary_node.read().await;
+        let alive_nodes = self.alive_nodes.read().await;
 
         if alive_nodes.len() == 0 {
             // no alive nodes, try to recheck
@@ -280,7 +289,8 @@ impl NodeRouter {
 
         if primary_node.is_none() {
             // no primary node, set it to the first node in the alive_nodes vector
-            *primary_node = Some(alive_nodes[0].clone());
+            let mut primary_node = self.primary_node.write().await;
+            *primary_node = Some(Arc::new(alive_nodes[0].clone()));
         }
 
         if primary_node.as_ref().unwrap().status == 0 {
@@ -293,12 +303,13 @@ impl NodeRouter {
                 }
             }
 
+            let mut primary_node = self.primary_node.write().await;
             if primary_node_index == alive_nodes.len() - 1 {
                 // primary node is the last node in the alive_nodes vector, set it to the first node in the vector
-                *primary_node = Some(alive_nodes[0].clone());
+                *primary_node = Some(Arc::new(alive_nodes[0].clone()));
             } else {
                 // primary node is not the last node in the alive_nodes vector, set it to the next node in the vector
-                *primary_node = Some(alive_nodes[primary_node_index + 1].clone());
+                *primary_node = Some(Arc::new(alive_nodes[primary_node_index + 1].clone()));
             }
         }
 
@@ -376,7 +387,7 @@ impl NodeRouter {
         // send to the syncing nodes to help them catch up with tokio::spawn
         let syncing_nodes = self.alive_but_syncing_nodes.clone();
         tokio::spawn(async move {
-            let syncing_nodes = syncing_nodes.lock().await;
+            let syncing_nodes = syncing_nodes.read().await;
             tracing::debug!("sending fcU to {} syncing nodes", syncing_nodes.len());
             for node in syncing_nodes.iter() {
                 match node.do_request(req.clone(), jwt_token.clone()).await
@@ -393,7 +404,7 @@ impl NodeRouter {
     }
 
     async fn do_engine_route(
-        &mut self,
+        &self,
         data: &str,
         j: &serde_json::Value,
         jwt_token: String,
@@ -418,7 +429,7 @@ impl NodeRouter {
         } else if j["method"] == "engine_forkchoiceUpdatedV1" || j["method"] == "engine_newPayloadV1" {
             tracing::debug!("Sending forkchoiceUpdated to alive nodes",);
             let mut resps: Vec<String> = Vec::new();
-            let alive_nodes = self.alive_nodes.lock().await;
+            let alive_nodes = self.alive_nodes.read().await;
             for node in alive_nodes.iter() {
                 let resp = node.do_request(data.to_string(), jwt_token.clone()).await;
                 match resp {
@@ -451,10 +462,16 @@ impl NodeRouter {
             let data = data.to_string();
             let alive_nodes = self.alive_nodes.clone();
             tokio::spawn(async move {
-                let alive_nodes = alive_nodes.lock().await;
+                let alive_nodes = alive_nodes.read().await;
                 for node in alive_nodes.iter() {
                     if node.url != primary_node.url {
-                        node.do_request(data.to_string(), jwt_token.clone()).await;
+                        match node.do_request(data.clone(), jwt_token.clone()).await
+                        {
+                            Ok(_) => {}
+                            Err(e) => {
+                                tracing::error!("error sending fcU to syncing node: {}", e);
+                            }
+                        };
                     }
                 }
             });
@@ -468,32 +485,7 @@ impl NodeRouter {
         }
     }
 
-    async fn do_builder_route(&mut self, data: &str, jwt_token: String) -> (String, u16) {
-        // we need to foward the request to all nodes, and return the first response that **is not a method not found error**, because not all nodes support the builder API
-        let mut methnotfound: String = String::new();
-        let alive_nodes = self.alive_nodes.lock().await;
-        for node in alive_nodes.iter() {
-            let resp = node.do_request(data.to_string(), jwt_token.clone()).await;
-
-            match resp {
-                Ok(resp) => {
-                    if resp.1 == 200 {
-                        return resp;
-                    } else {
-                        methnotfound = resp.0;
-                    }
-                }
-                Err(_) => {}
-            }
-        }
-
-        if methnotfound.chars().count() == 0 {
-            return (String::from("No nodes available"), 500);
-        }
-        (methnotfound, 500) // responses in resps are all method not found errors, so return the first one
-    }
-
-    async fn do_route_normal(&mut self, data: &str, jwt_token: String) -> (String, u16) {
+    async fn do_route_normal(&self, data: &str, jwt_token: String) -> (String, u16) {
         // simply send request to primary node
         let primary_node = self.get_execution_node().await;
         if primary_node.is_none() {
@@ -519,7 +511,7 @@ impl NodeRouter {
 async fn route_all(
     body: String,
     headers: HeaderMap,
-    Extension(router): Extension<Arc<tokio::sync::Mutex<NodeRouter>>>,
+    Extension(router): Extension<Arc<NodeRouter>>,
 ) -> impl IntoResponse {
     let j: serde_json::Value = serde_json::from_str(&body).unwrap();
     let jwt_token = headers
@@ -530,19 +522,10 @@ async fn route_all(
         .to_string();
 
     tracing::debug!("Request received, method: {}", j["method"]);
-    let mut router = router.lock().await;
     let meth = j["method"].as_str().unwrap();
     if meth.starts_with("engine_") {
         tracing::trace!("Routing to engine route");
         let (resp, status) = router.do_engine_route(&body, &j, jwt_token).await;
-        return (
-            StatusCode::from_u16(status).unwrap(),
-            [(header::CONTENT_TYPE, "application/json")],
-            resp,
-        );
-    } else if meth.starts_with("builder_") {
-        tracing::trace!("Routing to builder route");
-        let (resp, status) = router.do_builder_route(&body, jwt_token).await;
         return (
             StatusCode::from_u16(status).unwrap(),
             [(header::CONTENT_TYPE, "application/json")],
@@ -667,18 +650,18 @@ async fn main() {
     let jwt_secret =
         &EncodingKey::from_secret(&hex::decode(jwt_secret).expect("Could not decode jwt secret"));
 
-    let router = Arc::new(tokio::sync::Mutex::new(NodeRouter::new(
+    let router = Arc::new(NodeRouter::new(
         jwt_secret,
         fcu_invalid_threshold,
         nodesinstances,
-    )));
+    ));
 
     // setup backround task to check if nodes are alive
     let router_clone = router.clone();
     tracing::debug!("Starting background recheck task");
     tokio::spawn(async move {
         loop {
-            router_clone.lock().await.recheck().await;
+            router_clone.recheck().await;
             tokio::time::sleep(Duration::from_secs(30)).await;
         }
     });
