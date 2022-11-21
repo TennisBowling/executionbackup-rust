@@ -526,19 +526,19 @@ async fn route_all(
     if meth.starts_with("engine_") {
         tracing::trace!("Routing to engine route");
         let (resp, status) = router.do_engine_route(&body, &j, jwt_token).await;
-        return (
+        (
             StatusCode::from_u16(status).unwrap(),
             [(header::CONTENT_TYPE, "application/json")],
             resp,
-        );
+        )
     } else {
         tracing::trace!("Routing to normal route");
         let (resp, status) = router.do_route_normal(&body, jwt_token).await;
-        return (
+        (
             StatusCode::from_u16(status).unwrap(),
             [(header::CONTENT_TYPE, "application/json")],
             resp,
-        );
+        )
     }
 }
 
