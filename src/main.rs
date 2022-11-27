@@ -518,6 +518,7 @@ async fn route_all(
     headers: HeaderMap,
     Extension(router): Extension<Arc<NodeRouter>>,
 ) -> impl IntoResponse {
+    let start = std::time::Instant::now();
     let j: serde_json::Value = serde_json::from_str(&body).unwrap();
     let jwt_token = headers
         .get("Authorization")
