@@ -281,6 +281,7 @@ impl NodeRouter {
 
         if alive_nodes.len() == 0 {
             // no alive nodes, try to recheck
+            tracing::info!("no alive nodes, rechecking");
             drop(primary_node);
             drop(alive_nodes);
             self.recheck().await;
@@ -289,10 +290,12 @@ impl NodeRouter {
 
         if primary_node.is_none() {
             // no primary node, set it to the first node in the alive_nodes vector
+            drop(primary_node);
             let mut primary_node = self.primary_node.write().await;
             *primary_node = Some(Arc::new(alive_nodes[0].clone()));
         }
 
+        let primary_node = self.primary_node.read().await;
         if primary_node.as_ref().unwrap().status == 0 {
             // primary node is offline, set it to the next node in the alive_nodes vector
             let mut primary_node_index = 0;
@@ -303,6 +306,7 @@ impl NodeRouter {
                 }
             }
 
+            drop(primary_node);
             let mut primary_node = self.primary_node.write().await;
             if primary_node_index == alive_nodes.len() - 1 {
                 // primary node is the last node in the alive_nodes vector, set it to the first node in the vector
@@ -313,6 +317,7 @@ impl NodeRouter {
             }
         }
 
+        let primary_node = self.primary_node.read().await;  // we must lock here since we might've dropped it above
         Some(primary_node.as_ref().unwrap().clone())
     }
 
@@ -526,6 +531,7 @@ async fn route_all(
     if meth.starts_with("engine_") {
         tracing::trace!("Routing to engine route");
         let (resp, status) = router.do_engine_route(&body, &j, jwt_token).await;
+        tracing::debug!("Response from engine route took: {}ms", start.elapsed().as_millis());
         (
             StatusCode::from_u16(status).unwrap(),
             [(header::CONTENT_TYPE, "application/json")],
@@ -534,6 +540,7 @@ async fn route_all(
     } else {
         tracing::trace!("Routing to normal route");
         let (resp, status) = router.do_route_normal(&body, jwt_token).await;
+        tracing::debug!("Response from normal route took: {}ms", start.elapsed().as_millis());
         (
             StatusCode::from_u16(status).unwrap(),
             [(header::CONTENT_TYPE, "application/json")],
