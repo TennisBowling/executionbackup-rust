@@ -254,10 +254,24 @@ impl NodeRouter {
             alive_nodes.push(nodes[i].clone());
         }
 
-        // reset the primary node
-        let mut primary_node = self.primary_node.write().await;
-        *primary_node = None;
-
+        if alive_nodes.len() == 0 {
+            if alive_but_syncing_nodes.len() > 0 {
+                // if there are no alive nodes, but there are alive_but_syncing_nodes, then we can use one of those
+                // as the primary node
+                let primary_node = alive_but_syncing_nodes[0].clone();
+                *self.primary_node.write().await = Some(Arc::new(primary_node));
+                tracing::warn!("No alive nodes, using a syncing node as primary node");
+            } else {
+                // if there are no alive nodes and no alive_but_syncing_nodes, then we can't use any nodes
+                // so we set the primary node to None
+                *self.primary_node.write().await = None;
+                tracing::error!("No nodes are alive or syncing!");
+            }
+        } else {
+            // if there are alive nodes, then we can use one of those as the primary node
+            let primary_node = alive_nodes[0].clone();
+            *self.primary_node.write().await = Some(Arc::new(primary_node));
+        }
 
         tracing::debug!(
             "Alive nodes: {}, Dead nodes: {}, Syncing nodes: {}",
