@@ -9,7 +9,7 @@ use jsonwebtoken::{self, EncodingKey};
 use reqwest::{self, header};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::net::SocketAddr;
+use std::{net::SocketAddr, mem};
 use std::{collections::HashMap, sync::Arc};
 use tokio::{time::Duration, sync::RwLock};
 
@@ -383,7 +383,15 @@ impl NodeRouter {
         }
 
         let majority = majority.unwrap();
-        let majorityjson: serde_json::Value = serde_json::from_str(&majority).unwrap();
+        let majorityjson: Result<serde_json::Value, serde_json::Error> = serde_json::from_str(&majority);
+
+        if let Err(e) = majorityjson {
+            // majority is not valid json, so return SYNCING and inform the user
+            tracing::error!("Majority is not valid json, returning SYNCING. Error: {}", e);
+            return json!({"jsonrpc":"2.0","id":id,"result":{"payloadStatus":{"status":"SYNCING","latestValidHash":null,"validationError":null}},"payloadId":null}).to_string();
+        }
+
+        let majorityjson = majorityjson.unwrap();
 
         if majorityjson["result"]["payloadStatus"]["status"] == "INVALID" {
             // majority is INVALID, so return INVALID (to not go through the next parts of the algorithm)
@@ -395,7 +403,16 @@ impl NodeRouter {
             {
                 continue;
             }
-            let respjson: serde_json::Value = serde_json::from_str(resp).unwrap();
+            let respjson: Result<serde_json::Value, serde_json::Error> = serde_json::from_str(resp);
+
+            if let Err(e) = respjson {
+                // majority is not valid json, so return SYNCING and inform the user
+                tracing::error!("Majority is not valid json, returning SYNCING. Error: {}", e);
+                return json!({"jsonrpc":"2.0","id":id,"result":{"payloadStatus":{"status":"SYNCING","latestValidHash":null,"validationError":null}},"payloadId":null}).to_string();
+            }
+
+            let respjson = respjson.unwrap();
+
             if respjson["result"]["payloadStatus"]["status"] == "INVALID" {
                 // at least one node is VALID, so return SYNCING
                 return json!({"jsonrpc":"2.0","id":id,"result":{"payloadStatus":{"status":"SYNCING","latestValidHash":null,"validationError":null}},"payloadId":null}).to_string();
@@ -409,13 +426,9 @@ impl NodeRouter {
             let syncing_nodes = syncing_nodes.read().await;
             tracing::debug!("sending fcU to {} syncing nodes", syncing_nodes.len());
             for node in syncing_nodes.iter() {
-                match node.do_request(req.clone(), jwt_token.clone()).await
-                {
-                    Ok(_) => {}
-                    Err(e) => {
-                        tracing::error!("error sending fcU to syncing node: {}", e);
-                    }
-                };
+                if let Err(e) = node.do_request(req.clone(), jwt_token.clone()).await {
+                    tracing::error!("error sending fcU to syncing node: {}", e);
+                }
             }
         });
 
@@ -446,7 +459,7 @@ impl NodeRouter {
                 }
             }
         } else if j["method"] == "engine_forkchoiceUpdatedV1" || j["method"] == "engine_newPayloadV1" {
-            tracing::debug!("Sending forkchoiceUpdated to alive nodes",);
+            tracing::debug!("Sending forkchoiceUpdated to alive nodes");
             let mut resps: Vec<String> = Vec::new();
             let alive_nodes = self.alive_nodes.read().await;
             for node in alive_nodes.iter() {
@@ -456,11 +469,12 @@ impl NodeRouter {
                         resps.push(resp.0);
                     }
                     Err(e) => {
-                        tracing::warn!("engine_forkchoiceUpdatedV1 error: {}", e);
+                        tracing::error!("engine_forkchoiceUpdatedV1 error: {}", e);
                         resps.push(e.to_string());
                     }
                 }
             }
+            mem::drop(alive_nodes);
             let id = j["id"].as_u64().unwrap();
             let resp = self
                 .fcu_logic(&resps, data.to_string(), jwt_token, id)
@@ -470,6 +484,7 @@ impl NodeRouter {
             // wait for primary node's response, but also send to all other nodes
             let primary_node = self.get_execution_node().await;
             if primary_node.is_none() {
+                tracing::warn!("No primary node available");
                 return (String::from("No nodes available"), 500);
             }
             let primary_node = primary_node.unwrap();
