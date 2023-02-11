@@ -51,14 +51,14 @@ impl ExecutionPayload {
         let fee_recipient = Address::from_slice(&hex::decode(payload["feeRecipient"].as_str().unwrap()[2..].to_string())?);
         let state_root = H256::from_slice(&hex::decode(payload["stateRoot"].as_str().unwrap()[2..].to_string())?);
         let receipts_root = H256::from_slice(&hex::decode(payload["receiptsRoot"].as_str().unwrap()[2..].to_string())?);
-        let logs_bloom = hex::decode(payload["logsBloom"].as_str().unwrap())?;
+        let logs_bloom = hex::decode(payload["logsBloom"].as_str().unwrap()[2..].to_string())?;
         let prev_randao = H256::from_slice(&hex::decode(payload["prevRandao"].as_str().unwrap()[2..].to_string())?);
-        let block_number = payload["blockNumber"].as_str().unwrap().parse::<u64>()?;
-        let gas_limit = payload["gasLimit"].as_str().unwrap().parse::<u64>()?;
-        let gas_used = payload["gasUsed"].as_str().unwrap().parse::<u64>()?;
-        let timestamp = payload["timestamp"].as_str().unwrap().parse::<u64>()?;
-        let extra_data = hex::decode(payload["extraData"].as_str().unwrap())?;
-        let base_fee_per_gas = U256::from_dec_str(payload["baseFeePerGas"].as_str().unwrap())?;
+        let block_number: u64 = u64::from_str_radix(&payload["blockNumber"].as_str().unwrap()[2..], 16)?;
+        let gas_limit: u64 = u64::from_str_radix(&payload["gasLimit"].as_str().unwrap()[2..], 16)?;
+        let gas_used = u64::from_str_radix(&payload["gasUsed"].as_str().unwrap()[2..], 16)?;
+        let timestamp = u64::from_str_radix(&payload["timestamp"].as_str().unwrap()[2..], 16)?;
+        let extra_data = hex::decode(payload["extraData"].as_str().unwrap()[2..].to_string())?;
+        let base_fee_per_gas = U256::from_str_radix(&payload["baseFeePerGas"].as_str().unwrap()[2..], 16)?;
         let block_hash = H256::from_slice(&hex::decode(payload["blockHash"].as_str().unwrap()[2..].to_string())?);
         let transactions = payload["transactions"].as_array().unwrap().iter().map(|txn| txn.as_str().unwrap().to_string()).collect::<Vec<String>>().iter().map(|txn| txn[2..].to_string()).map(|txn_str| hex::decode(txn_str).unwrap()).collect::<Vec<Vec<u8>>>();
 
