@@ -13,8 +13,11 @@ use std::{net::SocketAddr, mem};
 use std::{collections::HashMap, sync::Arc};
 use tokio::{time::Duration, sync::RwLock};
 
-use crate::verify_hash::{ExecutionPayload, verify_payload_block_hash};
+use crate::verify_hash::verify_payload_block_hash;
 mod verify_hash;
+use types::{ExecutionPayload, PayloadStatusV1, PayloadStatusV1Status};
+
+
 
 const DEFAULT_ALGORITHM: jsonwebtoken::Algorithm = jsonwebtoken::Algorithm::HS256;
 
@@ -44,6 +47,31 @@ fn make_jwt(jwt_key: &jsonwebtoken::EncodingKey) -> Result<String, jsonwebtoken:
     let header = jsonwebtoken::Header::new(DEFAULT_ALGORITHM);
     let token = jsonwebtoken::encode(&header, &claim_inst, jwt_key).unwrap();
     Ok(token)
+}
+
+fn make_syncing_str(id: u64, payload: &serde_json::Value, method: &str) -> String {
+    if method == "engine_newPayloadV1" {
+        tracing::debug!("Verifying execution payload blockhash {}.", payload["blockHash"]);
+        let execution_payload = ExecutionPayload::from_json(&payload);
+        if let Err(e) = execution_payload {
+            tracing::error!("Error parsing execution payload: {}", e);
+            return e.to_string();
+        }
+
+        if let Err(e) = verify_payload_block_hash(&execution_payload.unwrap()) {
+            tracing::error!("Error verifying execution payload blockhash: {}", e);
+            return e.to_string();
+        }
+
+        tracing::debug!("Execution payload blockhash {} verified. Returning SYNCING", payload["blockHash"]);
+        json!({"jsonrpc":"2.0","id":id,"result":{"payloadStatus":{"status":"SYNCING","latestValidHash":null,"validationError":null}},"payloadId":null}).to_string()
+    }
+    else {
+        json!({"jsonrpc":"2.0","id":id,"result":{"payloadStatus":{"status":"SYNCING","latestValidHash":null,"validationError":null}},"payloadId":null}).to_string()
+    }
+
+
+    
 }
 
 #[derive(Clone)]
@@ -382,7 +410,8 @@ impl NodeRouter {
 
         if majority.is_none() {
             // no majority, so return SYNCING
-            return json!({"jsonrpc":"2.0","id":id,"result":{"payloadStatus":{"status":"SYNCING","latestValidHash":null,"validationError":null}},"payloadId":null}).to_string();
+            let req = serde_json::from_str::<serde_json::Value>(&req).unwrap();
+            return make_syncing_str(id, &req["params"][0], &req["method"].to_string());
         }
 
         let majority = majority.unwrap();
@@ -391,7 +420,8 @@ impl NodeRouter {
         if let Err(e) = majorityjson {
             // majority is not valid json, so return SYNCING and inform the user
             tracing::error!("Majority is not valid json, returning SYNCING. Error: {}", e);
-            return json!({"jsonrpc":"2.0","id":id,"result":{"payloadStatus":{"status":"SYNCING","latestValidHash":null,"validationError":null}},"payloadId":null}).to_string();
+            let req = serde_json::from_str::<serde_json::Value>(&req).unwrap();
+            return make_syncing_str(id, &req["params"][0], &req["method"].to_string());
         }
 
         let majorityjson = majorityjson.unwrap();
@@ -411,14 +441,16 @@ impl NodeRouter {
             if let Err(e) = respjson {
                 // majority is not valid json, so return SYNCING and inform the user
                 tracing::error!("Majority is not valid json, returning SYNCING. Error: {}", e);
-                return json!({"jsonrpc":"2.0","id":id,"result":{"payloadStatus":{"status":"SYNCING","latestValidHash":null,"validationError":null}},"payloadId":null}).to_string();
+                let req = serde_json::from_str::<serde_json::Value>(&req).unwrap();
+                return make_syncing_str(id, &req["params"][0], &req["method"].to_string());
             }
 
             let respjson = respjson.unwrap();
 
             if respjson["result"]["payloadStatus"]["status"] == "INVALID" {
                 // at least one node is VALID, so return SYNCING
-                return json!({"jsonrpc":"2.0","id":id,"result":{"payloadStatus":{"status":"SYNCING","latestValidHash":null,"validationError":null}},"payloadId":null}).to_string();
+                let req = serde_json::from_str::<serde_json::Value>(&req).unwrap();
+                return make_syncing_str(id, &req["params"][0], &req["method"].to_string());
             }
         }
 
@@ -462,23 +494,6 @@ impl NodeRouter {
                 }
             }
         } else if j["method"] == "engine_forkchoiceUpdatedV1" || j["method"] == "engine_newPayloadV1" {
-            if j["method"] == "engine_newPayloadV1" {
-                tracing::debug!("Verifying execution payload blockhash {}.", j["params"][0]["blockHash"]);
-                let execution_payload = ExecutionPayload::from_json(&j["params"][0]);
-                if let Err(e) = execution_payload {
-                    tracing::error!("Error parsing execution payload: {}", e);
-                    return (e.to_string(), 500);
-                }
-
-                if let Err(e) = verify_payload_block_hash(&execution_payload.unwrap()) {
-                    tracing::error!("Error verifying execution payload blockhash: {}", e);
-                    return (e.to_string(), 500);
-                }
-
-                tracing::debug!("Execution payload blockhash {} verified.", j["params"][0]["blockHash"]);
-            }
-
-
             tracing::debug!("Sending {} to alive nodes", j["method"]);
             let mut resps: Vec<String> = Vec::new();
             let alive_nodes = self.alive_nodes.read().await;

@@ -58,15 +58,15 @@ jobs:
             # ==============================
 
 
-            - name: Build Lighthouse for x86_64-unknown-linux-gnu
+            - name: Build EB for x86_64-unknown-linux-gnu
               if:   matrix.arch == 'x86_64-unknown-linux-gnu'
               run:  cargo install --path . --force --locked --profile highperf
 
-            - name: Build Lighthouse for x86_64-apple-darwin
+            - name: Build EB for x86_64-apple-darwin
               if:   matrix.arch == 'x86_64-apple-darwin'
               run:  cargo install --path . --force --locked --profile highperf
 
-            - name: Build Lighthouse for Windows
+            - name: Build EB for Windows
               if:   matrix.arch == 'x86_64-windows'
               run:  cargo install --path . --force --locked --profile highperf
         
