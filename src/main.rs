@@ -665,7 +665,7 @@ async fn main() {
         )
         .get_matches();
 
-    tracing::info!("Starting executionbackup version 1.0.2");
+    
 
     let port = matches.value_of("port").unwrap();
     let nodes = matches.value_of("nodes").unwrap();
@@ -685,6 +685,7 @@ async fn main() {
     // set log level with tracing subscriber
     let subscriber = tracing_subscriber::fmt().with_max_level(log_level).finish();
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
+    tracing::info!("Starting executionbackup version 1.0.2");
 
     tracing::info!("fcu invalid threshold set to: {}", fcu_invalid_threshold);
     let fcu_invalid_threshold = fcu_invalid_threshold
