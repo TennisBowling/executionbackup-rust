@@ -18,7 +18,16 @@ serde = {version = "1.0", features = ["derive"] }
 hex = "0.4"
 chrono = "0.4"
 clap = "2.33.3"
+triehash = "0.8.4"
+hash-db = "0.15.2"
+ethers-core = "1.0.2"
 headers = "0.3"
+rlp = "0.5.2"
+keccak-hash = "0.10.0"
+hash256-std-hasher = "0.15.2"
+metastruct = "0.1.0"
+ethereum-types = "0.14.1"
+
 
 [profile.highperf]
 inherits = "release"

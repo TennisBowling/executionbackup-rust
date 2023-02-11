@@ -13,6 +13,9 @@ use std::{net::SocketAddr, mem};
 use std::{collections::HashMap, sync::Arc};
 use tokio::{time::Duration, sync::RwLock};
 
+use crate::verify_hash::{ExecutionPayload, verify_payload_block_hash};
+mod verify_hash;
+
 const DEFAULT_ALGORITHM: jsonwebtoken::Algorithm = jsonwebtoken::Algorithm::HS256;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -254,8 +257,8 @@ impl NodeRouter {
             alive_nodes.push(nodes[i].clone());
         }
 
-        if alive_nodes.len() == 0 {
-            if alive_but_syncing_nodes.len() > 0 {
+        if alive_nodes.is_empty() {
+            if !alive_but_syncing_nodes.is_empty() {
                 // if there are no alive nodes, but there are alive_but_syncing_nodes, then we can use one of those
                 // as the primary node
                 let primary_node = alive_but_syncing_nodes[0].clone();
@@ -360,7 +363,7 @@ impl NodeRouter {
 
         // now we need to check if the maxcount is greater than or equal to the majority percentage
         let majority_count =
-            (self.majority_percentage as f32 / 100.0 * resultscount as f32).ceil() as u16;
+            (self.majority_percentage / 100.0 * resultscount as f32).ceil() as u16;
         if maxcount >= majority_count {
             Some(maxresp)
         } else {
@@ -459,7 +462,24 @@ impl NodeRouter {
                 }
             }
         } else if j["method"] == "engine_forkchoiceUpdatedV1" || j["method"] == "engine_newPayloadV1" {
-            tracing::debug!("Sending forkchoiceUpdated to alive nodes");
+            if j["method"] == "engine_newPayloadV!" {
+                tracing::debug!("Verifying execution payload blockhash {}.", j["params"][0]["blockHash"]);
+                let execution_payload = ExecutionPayload::from_json(&j["params"][0]);
+                if let Err(e) = execution_payload {
+                    tracing::error!("Error parsing execution payload: {}", e);
+                    return (e.to_string(), 500);
+                }
+
+                if let Err(e) = verify_payload_block_hash(&execution_payload.unwrap()) {
+                    tracing::error!("Error verifying execution payload blockhash: {}", e);
+                    return (e.to_string(), 500);
+                }
+
+                tracing::debug!("Execution payload blockhash {} verified.", j["params"][0]["blockHash"]);
+            }
+
+
+            tracing::debug!("Sending {} to alive nodes", j["method"]);
             let mut resps: Vec<String> = Vec::new();
             let alive_nodes = self.alive_nodes.read().await;
             for node in alive_nodes.iter() {
@@ -469,7 +489,7 @@ impl NodeRouter {
                         resps.push(resp.0);
                     }
                     Err(e) => {
-                        tracing::error!("engine_forkchoiceUpdatedV1 error: {}", e);
+                        tracing::error!("{} error: {}", j["method"], e);
                         resps.push(e.to_string());
                     }
                 }
