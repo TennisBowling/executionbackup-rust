@@ -47,20 +47,20 @@ pub struct ExecutionPayload {
 
 impl ExecutionPayload {
     pub fn from_json(payload: &serde_json::Value) -> Result<Self, Box<dyn Error>> {
-        let parent_hash = H256::from_slice(&hex::decode(payload["parentHash"].as_str().unwrap())?);
-        let fee_recipient = Address::from_slice(&hex::decode(payload["feeRecipient"].as_str().unwrap())?);
-        let state_root = H256::from_slice(&hex::decode(payload["stateRoot"].as_str().unwrap())?);
-        let receipts_root = H256::from_slice(&hex::decode(payload["receiptsRoot"].as_str().unwrap())?);
+        let parent_hash = H256::from_slice(&hex::decode(payload["parentHash"].as_str().unwrap()[2..].to_string())?);
+        let fee_recipient = Address::from_slice(&hex::decode(payload["feeRecipient"].as_str().unwrap()[2..].to_string())?);
+        let state_root = H256::from_slice(&hex::decode(payload["stateRoot"].as_str().unwrap()[2..].to_string())?);
+        let receipts_root = H256::from_slice(&hex::decode(payload["receiptsRoot"].as_str().unwrap()[2..].to_string())?);
         let logs_bloom = hex::decode(payload["logsBloom"].as_str().unwrap())?;
-        let prev_randao = H256::from_slice(&hex::decode(payload["prevRandao"].as_str().unwrap())?);
+        let prev_randao = H256::from_slice(&hex::decode(payload["prevRandao"].as_str().unwrap()[2..].to_string())?);
         let block_number = payload["blockNumber"].as_str().unwrap().parse::<u64>()?;
         let gas_limit = payload["gasLimit"].as_str().unwrap().parse::<u64>()?;
         let gas_used = payload["gasUsed"].as_str().unwrap().parse::<u64>()?;
         let timestamp = payload["timestamp"].as_str().unwrap().parse::<u64>()?;
         let extra_data = hex::decode(payload["extraData"].as_str().unwrap())?;
         let base_fee_per_gas = U256::from_dec_str(payload["baseFeePerGas"].as_str().unwrap())?;
-        let block_hash = H256::from_slice(&hex::decode(payload["blockHash"].as_str().unwrap())?);
-        let transactions = payload["transactions"].as_array().unwrap().iter().map(|txn| hex::decode(txn.as_str().unwrap()).unwrap()).collect::<Vec<Vec<u8>>>();
+        let block_hash = H256::from_slice(&hex::decode(payload["blockHash"].as_str().unwrap()[2..].to_string())?);
+        let transactions = payload["transactions"].as_array().unwrap().iter().map(|txn| txn.as_str().unwrap().to_string()).collect::<Vec<String>>().iter().map(|txn| txn[2..].to_string()).map(|txn_str| hex::decode(txn_str).unwrap()).collect::<Vec<Vec<u8>>>();
 
         Ok(ExecutionPayload {
             parent_hash,
