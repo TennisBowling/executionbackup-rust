@@ -665,6 +665,8 @@ async fn main() {
         )
         .get_matches();
 
+    tracing::info!("Starting executionbackup version 1.0.2");
+
     let port = matches.value_of("port").unwrap();
     let nodes = matches.value_of("nodes").unwrap();
     let jwt_secret = matches.value_of("jwt-secret").unwrap();
