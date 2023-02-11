@@ -462,7 +462,7 @@ impl NodeRouter {
                 }
             }
         } else if j["method"] == "engine_forkchoiceUpdatedV1" || j["method"] == "engine_newPayloadV1" {
-            if j["method"] == "engine_newPayloadV!" {
+            if j["method"] == "engine_newPayloadV1" {
                 tracing::debug!("Verifying execution payload blockhash {}.", j["params"][0]["blockHash"]);
                 let execution_payload = ExecutionPayload::from_json(&j["params"][0]);
                 if let Err(e) = execution_payload {
