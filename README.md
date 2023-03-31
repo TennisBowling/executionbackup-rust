@@ -1,3 +1,9 @@
+
+# DON'T USE THIS REPO ANYMORE
+The code from here was migrated to the [main EB repo](https://github.com/TennisBowling/executionbackup).  
+This repo is kept as a snapshot.
+
+
 # executionbackup
 A Ethereum 2.0 multiplexer enabling execution node failover and multiplexing
 

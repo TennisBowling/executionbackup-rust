@@ -16,8 +16,6 @@
                 "http://192.168.86.109:8551,http://192.168.86.36:8551",
                 "--port",
                 "8551",
-                "--jwt-secret",
-                "C:\\Users\\FASTS\\OneDrive\\Documents\\github\\executionbackup-rust\\jwt.txt",
                 "--log-level",
                 "debug"
             ]
